@@ -12,6 +12,8 @@ RUN addgroup --system app && adduser --system --ingroup app app
 COPY pyproject.toml README.md ./
 COPY app ./app
 COPY migrations ./migrations
+# Cadeia de certificados do RDS para conexões `sslmode=verify-full` (sslrootcert na DSN).
+ADD https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem /app/certs/rds-global-bundle.pem
 
 RUN pip install --no-cache-dir . \
     && mkdir -p /app/data \

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -55,6 +56,19 @@ class Settings(BaseSettings):
     reporting_geoserver_db_password: str | None = None
     reporting_powerbi_db_password: str | None = None
     bronze_root: Path | None = None
+    # "local": Bronze e resultados do pipeline em disco compartilhado (desenvolvimento).
+    # "s3": Bronze espelhada em `s3_bronze_bucket` e resultados lidos de `s3_lake_bucket`;
+    # `bronze_root` passa a ser só o espelho local do nó de serviço.
+    storage_backend: Literal["local", "s3"] = "local"
+    s3_bronze_bucket: str | None = None
+    s3_lake_bucket: str | None = None
+    aws_region: str = "us-east-1"
+    # Nó de processamento sob demanda: a API o liga quando há importação pendente.
+    processing_instance_id: str | None = None
+    dispatch_interval_seconds: float = Field(default=60.0, ge=0)
+    # Cabeçalho com o IP real do cliente atrás de um proxy confiável (ex.: CloudFront-Viewer-Address).
+    # Só deve ser configurado quando a API não é alcançável diretamente pela internet.
+    client_ip_header: str | None = None
     airflow_base_url: str | None = None
     airflow_username: str | None = None
     airflow_password: str | None = None

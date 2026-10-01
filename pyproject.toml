@@ -10,6 +10,7 @@ readme = "README.md"
 requires-python = ">=3.11,<3.13"
 dependencies = [
     "argon2-cffi>=23.1,<24",
+    "boto3>=1.35,<2",
     "defusedxml>=0.7.1,<1",
     "fastapi>=0.115,<1",
     "pydantic-settings>=2.6,<3",
@@ -48,6 +49,8 @@ markers = [
 [tool.ruff]
 line-length = 110
 target-version = "py311"
+# Diretório gerado pelo `pip install .` dentro da imagem; não é código-fonte.
+extend-exclude = ["build"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]

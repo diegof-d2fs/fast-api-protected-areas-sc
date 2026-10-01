@@ -24,10 +24,12 @@ from app.domain.models import (
 )
 from app.domain.state import ensure_transition
 from app.infrastructure.airflow.client import AirflowClient
+from app.infrastructure.compute.ec2 import ProcessingNodeWaker
 from app.infrastructure.geospatial.validator import GeospatialValidator
 from app.infrastructure.persistence.sqlite import SqliteSubmissionRepository
 from app.infrastructure.storage.bronze import LocalBronzePublisher
 from app.infrastructure.storage.local import LocalObjectStorage
+from app.infrastructure.storage.s3 import LocalPipelineResults, PipelineResults, S3BronzePublisher
 
 _IDEMPOTENCY_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$")
 
@@ -49,9 +51,12 @@ class SubmissionService:
         repository: SqliteSubmissionRepository,
         storage: LocalObjectStorage,
         validator: GeospatialValidator,
-        bronze_publisher: LocalBronzePublisher | None = None,
+        bronze_publisher: LocalBronzePublisher | S3BronzePublisher | None = None,
         airflow_client: AirflowClient | None = None,
         uc_duplicate_checker: UCDuplicateChecker | None = None,
+        *,
+        pipeline_results: PipelineResults | None = None,
+        processing_waker: ProcessingNodeWaker | None = None,
     ) -> None:
         self.repository = repository
         self.storage = storage
@@ -59,6 +64,8 @@ class SubmissionService:
         self.bronze_publisher = bronze_publisher
         self.airflow_client = airflow_client
         self.uc_duplicate_checker = uc_duplicate_checker
+        self.pipeline_results = pipeline_results
+        self.processing_waker = processing_waker
         self.logger = logging.getLogger(__name__)
 
     async def create(
@@ -342,32 +349,65 @@ class SubmissionService:
         return item
 
     def _read_pipeline_result(self, item: Submission) -> dict[str, Any] | None:
-        if self.bronze_publisher is None:
+        reader = self.pipeline_results
+        if reader is None:
+            if self.bronze_publisher is None:
+                return None
+            reader = LocalPipelineResults(self.bronze_publisher.root.parent / "quality" / "api_results")
+        payload = reader.read(item.submission_id)
+        if payload is None:
             return None
-        result_path = (
-            self.bronze_publisher.root.parent
-            / "quality"
-            / "api_results"
-            / f"import_id={item.submission_id}"
-            / "result.json"
-        )
-        try:
-            payload = json.loads(result_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return None
-        except (OSError, json.JSONDecodeError):
-            self.logger.exception(
-                "could not read pipeline result",
-                extra={"import_id": item.submission_id, "path": str(result_path)},
-            )
-            return None
-        if not isinstance(payload, dict) or payload.get("import_id") != item.submission_id:
-            self.logger.error(
-                "ignored invalid pipeline result",
-                extra={"import_id": item.submission_id, "path": str(result_path)},
-            )
+        if payload.get("import_id") != item.submission_id:
+            self.logger.error("ignored invalid pipeline result", extra={"import_id": item.submission_id})
             return None
         return payload
+
+    def dispatch_pending(self) -> None:
+        """Trigger imports left `PUBLISHED` while Airflow was down and refresh running ones.
+
+        Runs periodically. When there is pending work and Airflow does not answer, it asks for the
+        processing node to start; the next round dispatches once Airflow is back.
+        """
+        if self.airflow_client is None:
+            return
+        published = self.repository.list_by_status([SubmissionStatus.PUBLISHED])
+        for item in published:
+            try:
+                self._trigger(item)
+            except AppError as exc:
+                if exc.error_code != "AIRFLOW_UNAVAILABLE":
+                    raise
+                self._wake_processing_node()
+                return
+            self._transition(item, SubmissionStatus.PROCESSING)
+        for item in self.repository.list_by_status([SubmissionStatus.PROCESSING]):
+            self.get_with_pipeline_state(item.submission_id)
+
+    def _trigger(self, item: Submission) -> None:
+        if not item.dag_id or not item.dag_run_id or not item.bronze_manifest_key:
+            raise AppError(
+                500,
+                "PUBLISHED_IMPORT_INCOMPLETE",
+                "Publicação inconsistente",
+                "A importação publicada não possui identificadores completos de orquestração.",
+            )
+        self.airflow_client.trigger(
+            item.dag_id,
+            item.dag_run_id,
+            {
+                "schema_version": "1.0",
+                "import_id": item.submission_id,
+                "correlation_id": item.correlation_id,
+                "domain": item.domain.value,
+                "operation": item.operation.value,
+                "manifest_key": item.bronze_manifest_key,
+                "checksum_sha256": item.checksum_sha256,
+            },
+        )
+
+    def _wake_processing_node(self) -> None:
+        if self.processing_waker is not None:
+            self.processing_waker.wake()
 
     def publish(self, import_id: str) -> Submission:
         item = self.get(import_id)
@@ -485,26 +525,16 @@ class SubmissionService:
             )
             item = self._transition(item, SubmissionStatus.PUBLISHED)
 
-        if not item.dag_id or not item.dag_run_id or not item.bronze_manifest_key:
-            raise AppError(
-                500,
-                "PUBLISHED_IMPORT_INCOMPLETE",
-                "Publicação inconsistente",
-                "A importação publicada não possui identificadores completos de orquestração.",
-            )
-        self.airflow_client.trigger(
-            item.dag_id,
-            item.dag_run_id,
-            {
-                "schema_version": "1.0",
-                "import_id": item.submission_id,
-                "correlation_id": item.correlation_id,
-                "domain": item.domain.value,
-                "operation": item.operation.value,
-                "manifest_key": item.bronze_manifest_key,
-                "checksum_sha256": item.checksum_sha256,
-            },
-        )
+        try:
+            self._trigger(item)
+        except AppError as exc:
+            if exc.error_code != "AIRFLOW_UNAVAILABLE":
+                raise
+            # The batch is already durable in the Bronze; it stays PUBLISHED and the dispatcher
+            # triggers it once the processing node is up.
+            self.logger.info("airflow unavailable; import queued", extra={"import_id": item.submission_id})
+            self._wake_processing_node()
+            return item
         return self._transition(item, SubmissionStatus.PROCESSING)
 
     def _find_uc_duplicate_features(self, item: Submission) -> list[dict[str, Any]]:

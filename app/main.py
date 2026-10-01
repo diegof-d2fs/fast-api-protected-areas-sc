@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from contextlib import asynccontextmanager
@@ -23,6 +24,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging
 from app.infrastructure.airflow.client import AirflowClient
+from app.infrastructure.compute.ec2 import ProcessingNodeWaker
 from app.infrastructure.geospatial.validator import GeospatialValidator
 from app.infrastructure.persistence.auth_repository import PostgresAuthRepository
 from app.infrastructure.persistence.postgres_ucs import PostgresUCRepository
@@ -31,6 +33,39 @@ from app.infrastructure.storage.bronze import LocalBronzePublisher
 from app.infrastructure.storage.local import LocalObjectStorage
 
 _CORRELATION_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
+
+
+def _cloud_integrations(configured: Settings, local_publisher: LocalBronzePublisher | None):
+    """Build the S3 Bronze mirror, the S3 pipeline-result reader and the processing-node waker."""
+    import boto3
+
+    from app.infrastructure.storage.s3 import S3BronzePublisher, S3PipelineResults
+
+    if local_publisher is None or not configured.s3_bronze_bucket or not configured.s3_lake_bucket:
+        raise RuntimeError(
+            "storage_backend=s3 exige PA_SC_BRONZE_ROOT, PA_SC_S3_BRONZE_BUCKET e PA_SC_S3_LAKE_BUCKET"
+        )
+    s3 = boto3.client("s3", region_name=configured.aws_region)
+    waker = None
+    if configured.processing_instance_id:
+        waker = ProcessingNodeWaker(
+            boto3.client("ec2", region_name=configured.aws_region), configured.processing_instance_id
+        )
+    return (
+        S3BronzePublisher(local_publisher, s3, configured.s3_bronze_bucket),
+        S3PipelineResults(s3, configured.s3_lake_bucket),
+        waker,
+    )
+
+
+async def _dispatch_forever(service: SubmissionService, interval_seconds: float) -> None:
+    logger = logging.getLogger(__name__)
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(service.dispatch_pending)
+        except Exception:
+            logger.exception("pending import dispatch failed")
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -48,8 +83,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         repository = SqliteSubmissionRepository(configured.data_root / "submissions.sqlite3")
         repository.initialize()
         bronze_publisher = None
+        pipeline_results = None
+        processing_waker = None
         if configured.bronze_root:
             bronze_publisher = LocalBronzePublisher(configured.bronze_root, storage)
+        if configured.storage_backend == "s3":
+            bronze_publisher, pipeline_results, processing_waker = _cloud_integrations(
+                configured, bronze_publisher
+            )
+        if bronze_publisher is not None:
             bronze_publisher.initialize()
         airflow_client = None
         if (
@@ -89,15 +131,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             bronze_publisher,
             airflow_client,
             uc_repository,
+            pipeline_results=pipeline_results,
+            processing_waker=processing_waker,
         )
         app.state.uc_repository = uc_repository
         app.state.uc_service = uc_service
         app.state.auth_service = auth_service
+        dispatcher = None
+        if airflow_client is not None and configured.dispatch_interval_seconds > 0:
+            dispatcher = asyncio.create_task(
+                _dispatch_forever(app.state.submission_service, configured.dispatch_interval_seconds)
+            )
         yield
+        if dispatcher is not None:
+            dispatcher.cancel()
 
     app = FastAPI(
         title=configured.app_name,
         version=configured.app_version,
+        docs_url="/api/docs",
+        redoc_url=None,
+        openapi_url="/api/openapi.json",
         summary="Importação e validação de geometrias de áreas protegidas de Santa Catarina",
         description="""
 ## Finalidade
@@ -131,7 +185,9 @@ ZA e registra auditoria na mesma transação. `za_oficial/create` isolado perman
 será usado apenas no lote atômico UC+ZA novas. No fluxo agendado legado, uma ZA autoritativa com
 `ds_fonte` que já esteja na Bronze pode ser descoberta quando sua UC passar a existir; esse
 vínculo espacial não é permitido nas importações dirigidas pela API.
-Se Bronze ou Airflow estiverem indisponíveis, a operação falha de modo seguro e pode ser retomada.
+Se o Airflow estiver indisponível, a importação publicada fica `PUBLISHED` e é disparada
+automaticamente quando o processamento voltar; se a Bronze estiver indisponível, a operação falha de
+modo seguro e pode ser retomada.
 No incremento atual, `DAG_PRODES`, `DAG_MAPBIOMAS_ALERTA` e `DAG_MAPBIOMAS` participam do
 encadeamento dirigido. `DAG_FIRMS` está implementada, mas roda fora dessa cadeia por desenho: sua
 aquisição diária reaproveita o snapshot cadastral vigente e não deve repetir download por causa de

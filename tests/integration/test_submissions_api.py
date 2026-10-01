@@ -78,7 +78,7 @@ def test_health_and_openapi(client: TestClient) -> None:
     ready = client.get("/api/v1/health/ready")
     assert ready.status_code == 200
     assert ready.json()["checks"] == {"storage": True, "submission_repository": True}
-    openapi = client.get("/openapi.json")
+    openapi = client.get("/api/openapi.json")
     assert openapi.status_code == 200
     schema = openapi.json()
     assert schema["info"]["version"] == "0.5.0"

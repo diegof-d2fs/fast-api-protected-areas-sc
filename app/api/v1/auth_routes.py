@@ -22,14 +22,24 @@ router = APIRouter(prefix="/api/v1/auth", tags=["Autenticação"])
 
 
 def _client_ip(request: Request) -> str | None:
-    """Return a value the `INET` column accepts, discarding test-client/proxy placeholders."""
+    """Return a value the `INET` column accepts, discarding test-client/proxy placeholders.
+
+    Behind a trusted proxy the socket peer is the proxy itself, so the viewer address comes from
+    the configured header. CloudFront sends `<ip>:<porta>` (IPv6 without brackets).
+    """
+    header = getattr(request.app.state.settings, "client_ip_header", None)
+    if header and (value := request.headers.get(header)):
+        return _valid_ip(value.rsplit(":", 1)[0].strip("[]")) if ":" in value else _valid_ip(value)
     if request.client is None:
         return None
+    return _valid_ip(request.client.host)
+
+
+def _valid_ip(value: str) -> str | None:
     try:
-        ipaddress.ip_address(request.client.host)
+        return str(ipaddress.ip_address(value))
     except ValueError:
         return None
-    return request.client.host
 
 
 @router.post(

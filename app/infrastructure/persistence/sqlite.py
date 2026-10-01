@@ -4,7 +4,7 @@ import sqlite3
 from pathlib import Path
 
 from app.core.errors import conflict, not_found
-from app.domain.models import Submission
+from app.domain.models import Submission, SubmissionStatus
 
 
 class SqliteSubmissionRepository:
@@ -155,6 +155,18 @@ class SqliteSubmissionRepository:
         if cursor.rowcount != 1:
             raise not_found("Importação", item.submission_id)
         return item
+
+    def list_by_status(self, statuses: list[SubmissionStatus]) -> list[Submission]:
+        """Return submissions in the given states, oldest first."""
+        placeholders = ", ".join("?" for _ in statuses)
+        with self._connect() as connection:
+            rows = connection.execute(
+                f"SELECT payload_json FROM submission "
+                f"WHERE json_extract(payload_json, '$.status') IN ({placeholders}) "
+                f"ORDER BY created_at",
+                [status.value for status in statuses],
+            ).fetchall()
+        return [Submission.model_validate_json(row["payload_json"]) for row in rows]
 
     def ready(self) -> bool:
         try:

@@ -17,6 +17,7 @@ class FakeAuthRepository:
     # token_hash -> (user_id, expira_em, revogado_em)
     sessions: dict[str, tuple[int, datetime, datetime | None]] = field(default_factory=dict)
     login_attempts: list[tuple[str, bool, datetime]] = field(default_factory=list)
+    login_ips: list[str | None] = field(default_factory=list)
     _next_id: int = 1
 
     def get_user_by_username(self, username: str) -> UserRecord | None:
@@ -86,6 +87,7 @@ class FakeAuthRepository:
 
     def record_login_attempt(self, *, username: str, sucesso: bool, ip_origem: str | None) -> None:
         self.login_attempts.append((username, sucesso, datetime.now(UTC)))
+        self.login_ips.append(ip_origem)
 
     def count_recent_failed_attempts(self, *, username: str, since: datetime) -> int:
         return sum(
