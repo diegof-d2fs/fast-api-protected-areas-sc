@@ -1,0 +1,22 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4674"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "nm_uc": "UC pontual TCC 3",
+        "uc_id": "TCC3-POINT-20260816-001"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [-50.2500, -27.3500]
+      }
+    }
+  ]
+}

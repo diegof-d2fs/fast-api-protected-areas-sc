@@ -1,0 +1,75 @@
+from __future__ import annotations
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic import Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        env_prefix="PA_SC_",
+        case_sensitive=False,
+        extra="ignore",
+    )
+
+    app_name: str = "Protected Areas SC API"
+    app_version: str = "0.5.0"
+    environment: str = "development"
+    log_level: str = "INFO"
+    data_root: Path = Path("data")
+
+    max_upload_bytes: int = Field(default=50 * 1024 * 1024, ge=1)
+    upload_chunk_bytes: int = Field(default=1024 * 1024, ge=64 * 1024)
+    max_zip_entries: int = Field(default=64, ge=1)
+    max_zip_uncompressed_bytes: int = Field(default=250 * 1024 * 1024, ge=1)
+    max_zip_compression_ratio: float = Field(default=100.0, gt=1)
+    max_features: int = Field(default=10_000, ge=1)
+    max_vertices: int = Field(default=1_000_000, ge=1)
+    max_repair_area_delta_ratio: float = Field(default=0.01, ge=0, le=1)
+
+    canonical_epsg: int = 4674
+    metric_epsg: int = 31982
+    sc_bbox_min_x: float = -54.5
+    sc_bbox_min_y: float = -29.8
+    sc_bbox_max_x: float = -47.8
+    sc_bbox_max_y: float = -25.5
+    territorial_rule: str = "intersects_bbox"
+
+    readiness_requires_postgis: bool = False
+    readiness_requires_airflow: bool = False
+    database_dsn: str | None = None
+
+    admin_bootstrap_username: str | None = None
+    admin_bootstrap_password: str | None = None
+    session_ttl_hours: float = Field(default=12.0, gt=0)
+    login_lockout_threshold: int = Field(default=5, ge=1)
+    login_lockout_window_minutes: float = Field(default=15.0, gt=0)
+    # Um navegador real aceita `Secure` em https:// e em http://localhost (exceção de contexto
+    # seguro), mas Postman/curl/httpx não replicam essa exceção. Manter True em produção; só
+    # desligar explicitamente para testar o login manualmente sem TLS (Postman/Swagger locais).
+    session_cookie_secure: bool = True
+    reporting_geoserver_db_password: str | None = None
+    reporting_powerbi_db_password: str | None = None
+    bronze_root: Path | None = None
+    airflow_base_url: str | None = None
+    airflow_username: str | None = None
+    airflow_password: str | None = None
+    airflow_timeout_seconds: float = Field(default=10.0, gt=0, le=120)
+
+    @property
+    def sc_bbox(self) -> tuple[float, float, float, float]:
+        return (
+            self.sc_bbox_min_x,
+            self.sc_bbox_min_y,
+            self.sc_bbox_max_x,
+            self.sc_bbox_max_y,
+        )
+
+
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()

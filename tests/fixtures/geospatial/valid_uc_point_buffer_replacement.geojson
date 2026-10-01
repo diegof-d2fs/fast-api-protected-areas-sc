@@ -1,0 +1,12 @@
+{
+  "type": "FeatureCollection",
+  "crs": {"type": "name", "properties": {"name": "EPSG:4674"}},
+  "features": [{
+    "type": "Feature",
+    "properties": {"nm_uc": "UC pontual para ensaio de regeneração do Buffer de Abrangência"},
+    "geometry": {
+      "type": "Polygon",
+      "coordinates": [[[-51.01,-26.51],[-50.99,-26.51],[-50.99,-26.49],[-51.01,-26.49],[-51.01,-26.51]]]
+    }
+  }]
+}

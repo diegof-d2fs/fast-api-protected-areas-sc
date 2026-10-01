@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "protected-areas-sc-api"
+version = "0.5.0"
+description = "API REST para submissões geoespaciais de UC e ZA oficial de Santa Catarina"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "argon2-cffi>=23.1,<24",
+    "defusedxml>=0.7.1,<1",
+    "fastapi>=0.115,<1",
+    "pydantic-settings>=2.6,<3",
+    "psycopg[binary]>=3.2,<4",
+    "pyproj>=3.6,<4",
+    "pyshp>=2.3.1,<3",
+    "python-multipart>=0.0.12,<1",
+    "shapely>=2.0,<3",
+    "uvicorn[standard]>=0.32,<1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "httpx>=0.27,<1",
+    "mutmut>=3,<4",
+    "pytest>=8.3,<9",
+    "pytest-cov>=6,<7",
+    "ruff>=0.8,<1",
+]
+
+[tool.mutmut]
+paths_to_mutate = ["app/application/auth.py", "app/infrastructure/persistence/auth_repository.py"]
+tests_dir = "tests/"
+runner = "python -m pytest -q"
+
+[tool.setuptools.packages.find]
+include = ["app*"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+testpaths = ["tests"]
+markers = [
+    "postgis: integração real que exige PA_SC_TEST_DATABASE_DSN",
+]
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B008", "E501"]

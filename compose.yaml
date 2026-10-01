@@ -1,0 +1,69 @@
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    container_name: protected-areas-sc-api
+    environment:
+      PA_SC_ENVIRONMENT: ${PA_SC_ENVIRONMENT:-development}
+      PA_SC_LOG_LEVEL: ${PA_SC_LOG_LEVEL:-INFO}
+      PA_SC_DATA_ROOT: /app/data
+      PA_SC_MAX_UPLOAD_BYTES: ${PA_SC_MAX_UPLOAD_BYTES:-52428800}
+      PA_SC_MAX_ZIP_ENTRIES: ${PA_SC_MAX_ZIP_ENTRIES:-64}
+      PA_SC_MAX_ZIP_UNCOMPRESSED_BYTES: ${PA_SC_MAX_ZIP_UNCOMPRESSED_BYTES:-262144000}
+      PA_SC_MAX_ZIP_COMPRESSION_RATIO: ${PA_SC_MAX_ZIP_COMPRESSION_RATIO:-100}
+      PA_SC_MAX_FEATURES: ${PA_SC_MAX_FEATURES:-10000}
+      PA_SC_MAX_VERTICES: ${PA_SC_MAX_VERTICES:-1000000}
+      PA_SC_MAX_REPAIR_AREA_DELTA_RATIO: ${PA_SC_MAX_REPAIR_AREA_DELTA_RATIO:-0.01}
+      PA_SC_DATABASE_DSN: ${PA_SC_DATABASE_DSN:-postgresql://project:project@protected-areas-sc-db-main:5432/protected-areas-sc-db-main}
+      PA_SC_BRONZE_ROOT: /pipeline-data/bronze
+      PA_SC_AIRFLOW_BASE_URL: ${PA_SC_AIRFLOW_BASE_URL:-http://protected-areas-sc-airflow-webserver:8080}
+      PA_SC_AIRFLOW_USERNAME: ${PA_SC_AIRFLOW_USERNAME:-admin}
+      PA_SC_AIRFLOW_PASSWORD: ${PA_SC_AIRFLOW_PASSWORD:-admin}
+      PA_SC_AIRFLOW_TIMEOUT_SECONDS: ${PA_SC_AIRFLOW_TIMEOUT_SECONDS:-10}
+      PA_SC_READINESS_REQUIRES_AIRFLOW: "true"
+      PA_SC_ADMIN_BOOTSTRAP_USERNAME: ${PA_SC_ADMIN_BOOTSTRAP_USERNAME:-}
+      PA_SC_ADMIN_BOOTSTRAP_PASSWORD: ${PA_SC_ADMIN_BOOTSTRAP_PASSWORD:-}
+      PA_SC_SESSION_TTL_HOURS: ${PA_SC_SESSION_TTL_HOURS:-12}
+      PA_SC_LOGIN_LOCKOUT_THRESHOLD: ${PA_SC_LOGIN_LOCKOUT_THRESHOLD:-5}
+      PA_SC_LOGIN_LOCKOUT_WINDOW_MINUTES: ${PA_SC_LOGIN_LOCKOUT_WINDOW_MINUTES:-15}
+      PA_SC_SESSION_COOKIE_SECURE: ${PA_SC_SESSION_COOKIE_SECURE:-true}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      - ./data:/app/data
+      - type: bind
+        source: ${PIPELINE_DATA_DIR:-F:/Univali/2025_2/TCC/git/pipeline-protected-areas-sc/airflow/data}
+        target: /pipeline-data
+    restart: unless-stopped
+    networks:
+      - default
+      - pipeline
+
+  api-test:
+    profiles: ["test"]
+    build:
+      context: .
+      target: test
+    environment:
+      PA_SC_ENVIRONMENT: test
+      PA_SC_DATA_ROOT: /tmp/data
+    command: ["pytest", "-q", "--basetemp", "/tmp/pytest"]
+
+  api-migrate:
+    profiles: ["tools"]
+    build:
+      context: .
+      target: runtime
+    environment:
+      PA_SC_DATABASE_DSN: ${PA_SC_DATABASE_DSN:-postgresql://project:project@protected-areas-sc-db-main:5432/protected-areas-sc-db-main}
+      PA_SC_REPORTING_GEOSERVER_DB_PASSWORD: ${PA_SC_REPORTING_GEOSERVER_DB_PASSWORD:-}
+      PA_SC_REPORTING_POWERBI_DB_PASSWORD: ${PA_SC_REPORTING_POWERBI_DB_PASSWORD:-}
+    command: ["python", "-m", "app.infrastructure.persistence.migrate"]
+    networks:
+      - pipeline
+
+networks:
+  pipeline:
+    external: true
+    name: airflow_default

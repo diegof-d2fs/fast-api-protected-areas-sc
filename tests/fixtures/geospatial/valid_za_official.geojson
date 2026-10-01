@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "crs": {
+    "type": "name",
+    "properties": {
+      "name": "EPSG:4674"
+    }
+  },
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "name": "ZA oficial para ensaio UC-CW07"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [-50.3, -27.4],
+            [-50.2, -27.4],
+            [-50.2, -27.3],
+            [-50.3, -27.3],
+            [-50.3, -27.4]
+          ]
+        ]
+      }
+    }
+  ]
+}
