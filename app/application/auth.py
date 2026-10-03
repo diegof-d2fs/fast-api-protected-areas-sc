@@ -5,7 +5,13 @@ from datetime import UTC, datetime, timedelta
 from typing import Protocol
 
 from app.core.errors import AppError
-from app.core.security import generate_session_token, hash_password, hash_session_token, verify_password
+from app.core.security import (
+    dummy_password_hash,
+    generate_session_token,
+    hash_password,
+    hash_session_token,
+    verify_password,
+)
 from app.domain.auth import (
     CreateUserRequest,
     CurrentUser,
@@ -70,9 +76,11 @@ class AuthService:
             )
 
         user = self.repository.get_user_by_username(username)
-        credentials_valid = (
-            user is not None and user.ativo and verify_password(password, user.password_hash)
-        )
+        # Argon2 always runs, against a dummy hash when there is no active account, so the
+        # response time does not reveal which usernames exist.
+        known = user is not None and user.ativo
+        password_matches = verify_password(password, user.password_hash if known else dummy_password_hash())
+        credentials_valid = known and password_matches
         self.repository.record_login_attempt(
             username=username, sucesso=credentials_valid, ip_origem=ip_origem
         )

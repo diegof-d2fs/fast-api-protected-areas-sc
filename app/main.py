@@ -279,6 +279,22 @@ uma alteração cadastral pontual.
             error_code="HTTP_ERROR",
         )
 
+    @app.exception_handler(Exception)
+    async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        # Never expose internals to an internet client; the full error stays in the log,
+        # findable by the correlation id returned in the response.
+        logging.getLogger("api.errors").exception(
+            "unexpected error",
+            extra={"correlation_id": getattr(request.state, "correlation_id", None), "path": request.url.path},
+        )
+        return _problem_response(
+            request,
+            status_code=500,
+            title="Erro interno",
+            detail="Ocorreu um erro inesperado. Informe o correlation_id ao suporte.",
+            error_code="INTERNAL_ERROR",
+        )
+
     app.include_router(health_router)
     app.include_router(v1_router)
     app.include_router(ucs_router)

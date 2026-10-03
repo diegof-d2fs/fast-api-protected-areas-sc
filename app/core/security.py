@@ -23,6 +23,21 @@ def hash_password(password: str) -> str:
     return _hasher.hash(password)
 
 
+_DUMMY_PASSWORD_HASH: str | None = None
+
+
+def dummy_password_hash() -> str:
+    """Hash of a random secret, to spend Argon2 time when the user does not exist.
+
+    Verifying against it keeps the login response time the same for unknown and existing
+    accounts, so timing does not reveal which usernames exist.
+    """
+    global _DUMMY_PASSWORD_HASH
+    if _DUMMY_PASSWORD_HASH is None:
+        _DUMMY_PASSWORD_HASH = hash_password(secrets.token_hex(16))
+    return _DUMMY_PASSWORD_HASH
+
+
 def verify_password(password: str, password_hash: str) -> bool:
     try:
         return _hasher.verify(password_hash, password)
