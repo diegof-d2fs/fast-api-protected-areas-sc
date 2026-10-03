@@ -1,0 +1,90 @@
+# Testes em todo push e pull request; no main, publica a imagem da API no ECR, aplica as
+# migrations no RDS (idempotentes, como pa_owner) e troca só o contêiner da API no nó de serviço.
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Imagem de teste
+        run: docker build --target test -t pa-sc-api-test .
+      - name: Testes
+        run: docker run --rm pa-sc-api-test
+      - name: Análise estática
+        run: docker run --rm pa-sc-api-test ruff check .
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && vars.AWS_DEPLOY_ROLE_ARN != ''
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+    concurrency: deploy-api
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Publicar imagem
+        id: image
+        run: |
+          tag="${GITHUB_SHA::7}"
+          image="${{ steps.ecr.outputs.registry }}/pa-sc/api:$tag"
+          docker build --target runtime -t "$image" .
+          docker push "$image"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "image=$image" >> "$GITHUB_OUTPUT"
+
+      - name: Migrations
+        run: |
+          secret() { aws ssm get-parameter --with-decryption --name "/pa-sc/prod/$1" --query Parameter.Value --output text; }
+          owner="$(secret db/owner_password)"; geoserver="$(secret db/reporting_geoserver_password)"; powerbi="$(secret db/reporting_powerbi_password)"
+          echo "::add-mask::$owner"; echo "::add-mask::$geoserver"; echo "::add-mask::$powerbi"
+          host="$(aws rds describe-db-instances --db-instance-identifier pa-sc --query 'DBInstances[0].Endpoint.Address' --output text)"
+          docker run --rm \
+            -e PA_SC_DATABASE_DSN="postgresql://pa_owner:${owner}@${host}:5432/protected_areas_sc?sslmode=require" \
+            -e PA_SC_REPORTING_GEOSERVER_DB_PASSWORD="$geoserver" \
+            -e PA_SC_REPORTING_POWERBI_DB_PASSWORD="$powerbi" \
+            "${{ steps.image.outputs.image }}" python -m app.infrastructure.persistence.migrate
+
+      - name: Trocar a API no nó de serviço
+        run: |
+          aws ssm put-parameter --name /pa-sc/prod/deploy/api_image_tag \
+            --value "${{ steps.image.outputs.tag }}" --overwrite > /dev/null
+          instance="$(aws ssm get-parameter --name /pa-sc/prod/infra/serving_instance_id --query Parameter.Value --output text)"
+          registry="${{ steps.ecr.outputs.registry }}"
+          command_id="$(aws ssm send-command --instance-ids "$instance" --document-name AWS-RunShellScript \
+            --comment "deploy api ${{ steps.image.outputs.tag }}" \
+            --parameters "commands=[\"set -e\",\"/srv/pa-sc/render-env.sh\",\"aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin $registry\",\"docker compose -f /srv/pa-sc/compose.yaml --env-file /srv/pa-sc/.env pull api\",\"docker compose -f /srv/pa-sc/compose.yaml --env-file /srv/pa-sc/.env up -d api\"]" \
+            --query Command.CommandId --output text)"
+          aws ssm wait command-executed --command-id "$command_id" --instance-id "$instance" || true
+          status="$(aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance" --query Status --output text)"
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$instance" \
+            --query '[StandardOutputContent,StandardErrorContent]' --output text | tail -20
+          test "$status" = "Success"
+
+      - name: Saúde pelo domínio
+        run: |
+          for attempt in $(seq 1 36); do
+            if curl -fsS https://areasprotegidas-sc.com/api/v1/health/live > /dev/null; then
+              echo "API ${{ steps.image.outputs.tag }} no ar." >> "$GITHUB_STEP_SUMMARY"; exit 0
+            fi
+            sleep 5
+          done
+          echo "A API não respondeu em 3 minutos." >&2; exit 1
