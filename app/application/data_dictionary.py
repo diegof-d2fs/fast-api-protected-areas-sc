@@ -121,7 +121,7 @@ def _bases() -> list[UploadBaseView]:
     return [
         UploadBaseView(
             id="uc-create",
-            title="Unidade de Conservação — cadastro",
+            title="Cadastro de Unidade de Conservação",
             summary="Cadastra uma ou várias UCs novas, com limite poligonal ou como ponto.",
             endpoint="POST /api/v1/imports",
             domain=SubmissionDomain.UC.value,
@@ -130,7 +130,7 @@ def _bases() -> list[UploadBaseView]:
             feature_rule="Uma ou mais feições; cada feição é uma UC.",
             columns=uc_columns,
             metadata_fields=_metadata_fields(UcSubmissionMetadata, {"source"}, uc_common),
-            metadata_example={"source": "IMA/SC — portal de dados abertos", "source_crs": "EPSG:4674"},
+            metadata_example={"source": "Portal de dados abertos do IMA/SC", "source_crs": "EPSG:4674"},
             rules=[
                 "Com várias feições, cada uma precisa de nome e de identificador forte próprios "
                 "(`uc_id`, `cd_cnuc` ou `wdpa_pid`), sem repetição de identidade ou geometria no lote.",
@@ -143,7 +143,7 @@ def _bases() -> list[UploadBaseView]:
         ),
         UploadBaseView(
             id="uc-update",
-            title="Unidade de Conservação — atualização de geometria",
+            title="Atualização da geometria de Unidade de Conservação",
             summary="Substitui o limite vigente de uma UC existente, preservando a versão anterior.",
             endpoint="POST /api/v1/imports",
             domain=SubmissionDomain.UC.value,
@@ -170,7 +170,7 @@ def _bases() -> list[UploadBaseView]:
         ),
         UploadBaseView(
             id="uc-replace-point",
-            title="Unidade de Conservação — substituição de ponto por polígono",
+            title="Substituição de ponto por polígono em Unidade de Conservação",
             summary="Troca uma UC cadastrada como ponto pelo seu limite poligonal oficial.",
             endpoint="POST /api/v1/imports",
             domain=SubmissionDomain.UC.value,
@@ -196,7 +196,7 @@ def _bases() -> list[UploadBaseView]:
         ),
         UploadBaseView(
             id="uc-extinguish",
-            title="Unidade de Conservação — extinção",
+            title="Extinção de Unidade de Conservação",
             summary="Marca uma UC como extinta e encerra sua zona ativa. Não há arquivo: a API usa o cadastro vigente.",
             endpoint="POST /api/v1/ucs/{uc_id}/extinguish",
             domain=SubmissionDomain.UC.value,
@@ -214,7 +214,7 @@ def _bases() -> list[UploadBaseView]:
         ),
         UploadBaseView(
             id="uc-za-batch",
-            title="UC com ZA oficial — lote atômico",
+            title="Cadastro de UC com ZA oficial em lote atômico",
             summary="Cadastra uma UC nova junto com sua Zona de Amortecimento oficial, numa única publicação.",
             endpoint="POST /api/v1/import-batches",
             domain=None,
@@ -230,13 +230,13 @@ def _bases() -> list[UploadBaseView]:
             rules=[
                 "A ZA oficial não é publicada sozinha: envie a UC e a ZA em `/api/v1/imports` e agrupe-as no lote.",
                 "A ZA precisa ser polígono; colunas do arquivo da ZA são opcionais e servem para conferência.",
-                "As colunas da UC seguem a base \"Unidade de Conservação — cadastro\".",
+                "As colunas da UC seguem a base \"Cadastro de Unidade de Conservação\".",
             ],
             example_geojson=_feature_collection(_SAMPLE_ZONE, {"nm_uc": "UC de Exemplo", "ds_fonte": "Plano de Manejo"}),
         ),
         UploadBaseView(
             id="za-replace-buffer",
-            title="ZA oficial — substituição do Buffer de Abrangência",
+            title="Substituição do Buffer de Abrangência pela ZA oficial",
             summary="Substitui o Buffer de Abrangência de uma UC existente pela ZA oficial publicada.",
             endpoint="POST /api/v1/imports",
             domain=SubmissionDomain.OFFICIAL_ZONE.value,
