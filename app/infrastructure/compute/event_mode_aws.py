@@ -65,7 +65,6 @@ class SsmEventAutomation:
                 db_login=db_login,
                 login_valid_until=login_valid_until,
             ),
-            Tags=[{"Key": "pa-sc-event-id", "Value": str(event_id)}],
         )
         return response["AutomationExecutionId"]
 
