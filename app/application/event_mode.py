@@ -129,12 +129,18 @@ class EventModeService:
         )
 
     def _current(self) -> EventRecord | None:
-        """Evento aberto ou, se o último falhou, esse evento: a falha fica visível até o retorno forçado."""
+        """Evento aberto ou, se o último falhou depois de alguma automação rodar, esse evento.
+
+        Essa falha fica visível até o retorno forçado, porque a máquina pode ter ficado ampliada. Uma
+        falha sem execução (a AWS recusou o início) não alterou nada e não bloqueia nova ativação.
+        """
         record = self.repository.get_open()
         if record is not None:
             return record
         latest = self.repository.list_recent(1)
-        return latest[0] if latest and latest[0].status is EventStatus.FAILED else None
+        if latest and latest[0].status is EventStatus.FAILED and latest[0].execution_id:
+            return latest[0]
+        return None
 
     def history(self, limit: int = 20) -> list[EventView]:
         return [self.view(record) for record in self.repository.list_recent(limit)]

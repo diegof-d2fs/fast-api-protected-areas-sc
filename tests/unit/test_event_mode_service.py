@@ -231,12 +231,17 @@ def test_failed_automation_marks_event_failed_and_allows_forced_return(env) -> N
     assert returned.status is EventStatus.DEACTIVATING
 
 
-def test_automation_start_failure_is_reported_without_side_effects(env) -> None:
+def test_automation_start_failure_is_reported_without_blocking_a_new_attempt(env) -> None:
     env["automation"].fail_start = True
     with pytest.raises(AppError) as error:
         activate(env["service"])
     assert error.value.status_code == 502
     assert env["service"].history()[0].status is EventStatus.FAILED
+    assert env["service"].state().current is None
+
+    env["automation"].fail_start = False
+    retried = activate(env["service"], key="k2")
+    assert retried.status is EventStatus.ACTIVATING
 
 
 def test_credentials_only_while_active_and_audited(env) -> None:
