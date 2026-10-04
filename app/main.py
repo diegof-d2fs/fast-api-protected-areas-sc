@@ -15,6 +15,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.health import router as health_router
 from app.api.v1.auth_routes import router as auth_router
 from app.api.v1.batch_routes import router as batch_router
+from app.api.v1.dictionary_routes import router as dictionary_router
 from app.api.v1.routes import router as v1_router
 from app.api.v1.ucs_routes import router as ucs_router
 from app.application.auth import AuthService
@@ -300,6 +301,7 @@ uma alteração cadastral pontual.
     app.include_router(ucs_router)
     app.include_router(batch_router)
     app.include_router(auth_router)
+    app.include_router(dictionary_router)
     return app
 
 

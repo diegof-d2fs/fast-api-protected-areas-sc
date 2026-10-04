@@ -39,12 +39,20 @@ from app.domain.models import (
     ValidationSeverity,
 )
 
-_SHAPEFILE_REQUIRED = {".shp", ".shx", ".dbf", ".prj"}
-_SHAPEFILE_ALLOWED = _SHAPEFILE_REQUIRED | {".cpg", ".qix", ".qmd", ".sbn", ".sbx", ".xml"}
-_FORMAT_EXTENSIONS = {
-    GeospatialFormat.SHAPEFILE_ZIP: {".zip"},
-    GeospatialFormat.GEOJSON: {".geojson", ".json"},
-    GeospatialFormat.KML: {".kml"},
+# Regras de formato publicadas também pelo dicionário de dados (`app/application/data_dictionary.py`).
+SHAPEFILE_REQUIRED = frozenset({".shp", ".shx", ".dbf", ".prj"})
+SHAPEFILE_OPTIONAL = frozenset({".cpg", ".qix", ".qmd", ".sbn", ".sbx", ".xml"})
+SHAPEFILE_ALLOWED = SHAPEFILE_REQUIRED | SHAPEFILE_OPTIONAL
+SHAPEFILE_FALLBACK_ENCODING = "latin1"
+KML_EPSG = 4326
+FORMAT_EXTENSIONS = {
+    GeospatialFormat.SHAPEFILE_ZIP: frozenset({".zip"}),
+    GeospatialFormat.GEOJSON: frozenset({".geojson", ".json"}),
+    GeospatialFormat.KML: frozenset({".kml"}),
+}
+ALLOWED_GEOMETRY_TYPES = {
+    SubmissionDomain.UC: frozenset({"Point", "Polygon", "MultiPolygon"}),
+    SubmissionDomain.OFFICIAL_ZONE: frozenset({"Polygon", "MultiPolygon"}),
 }
 
 
@@ -92,8 +100,8 @@ class GeospatialValidator:
 
         if detected is None:
             raise unsupported_media("O conteúdo não foi reconhecido como Shapefile ZIP, GeoJSON ou KML.")
-        if extension not in _FORMAT_EXTENSIONS[detected]:
-            expected = ", ".join(sorted(_FORMAT_EXTENSIONS[detected]))
+        if extension not in FORMAT_EXTENSIONS[detected]:
+            expected = ", ".join(sorted(FORMAT_EXTENSIONS[detected]))
             raise unsupported_media(
                 f"O conteúdo foi detectado como {detected.value}, mas a extensão '{extension or '(ausente)'}' "
                 f"não corresponde. Extensões esperadas: {expected}."
@@ -210,11 +218,11 @@ class GeospatialValidator:
                 if cpg_path is not None:
                     encoding = cpg_path.read_text(encoding="ascii", errors="ignore").strip() or "utf-8"
                 else:
-                    encoding = "latin1"
+                    encoding = SHAPEFILE_FALLBACK_ENCODING
                     warnings.append(
                         self._issue(
                             "MISSING_CPG",
-                            "O Shapefile não possui .cpg; foi aplicada a codificação configurada latin1.",
+                            f"O Shapefile não possui .cpg; foi aplicada a codificação {encoding}.",
                             ValidationSeverity.WARNING,
                             suggestion="Inclua o arquivo .cpg no pacote.",
                         )
@@ -273,7 +281,7 @@ class GeospatialValidator:
                 )
             seen.add(lowered)
             extension = Path(normalized_name).suffix.lower()
-            if extension not in _SHAPEFILE_ALLOWED:
+            if extension not in SHAPEFILE_ALLOWED:
                 raise GeospatialContentError(
                     "UNEXPECTED_ZIP_CONTENT", f"Extensão não permitida no ZIP: {info.filename}"
                 )
@@ -306,7 +314,7 @@ class GeospatialValidator:
             )
         }
         present = {item.suffix.lower() for item in logical_files}
-        missing = sorted(_SHAPEFILE_REQUIRED - present)
+        missing = sorted(SHAPEFILE_REQUIRED - present)
         if missing:
             raise GeospatialContentError(
                 "MISSING_SHAPEFILE_SIDECARS",
@@ -363,7 +371,7 @@ class GeospatialValidator:
                 ValidationSeverity.WARNING,
             )
         ]
-        return _Dataset(geometries, properties, CRS.from_epsg(4326), warnings)
+        return _Dataset(geometries, properties, CRS.from_epsg(KML_EPSG), warnings)
 
     def _kml_geometry(self, parent: Any) -> BaseGeometry | None:
         parent_kind = self._local_name(parent.tag)
@@ -447,11 +455,7 @@ class GeospatialValidator:
         canonical_geometries: list[BaseGeometry] = []
         repair_applied = False
         vertex_count = 0
-        allowed_types = (
-            {"Point", "Polygon", "MultiPolygon"}
-            if domain is SubmissionDomain.UC
-            else {"Polygon", "MultiPolygon"}
-        )
+        allowed_types = ALLOWED_GEOMETRY_TYPES[domain]
 
         for index, raw_geometry in enumerate(dataset.geometries):
             geometry = force_2d(raw_geometry)

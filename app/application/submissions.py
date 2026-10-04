@@ -13,6 +13,7 @@ from fastapi import UploadFile
 from shapely.geometry import shape
 
 from app.core.errors import AppError, bad_request
+from app.domain.data_dictionary import UC_IDENTITY_FIELDS, UC_NAME_FIELDS
 from app.domain.models import (
     DuplicatePolicy,
     Submission,
@@ -564,11 +565,11 @@ class SubmissionService:
             properties = {
                 str(key).casefold(): value for key, value in (feature.get("properties") or {}).items()
             }
-            for key in ("uc_id", "id_uc"):
+            for key in UC_IDENTITY_FIELDS["official_identifier"]:
                 self._add_identity(uc_ids, properties.get(key))
-            for key in ("cd_cnuc", "cod_cnuc", "cnuc"):
+            for key in UC_IDENTITY_FIELDS["cd_cnuc"]:
                 self._add_identity(cnuc_codes, properties.get(key))
-            for key in ("wdpa_pid", "wdpaid", "wdpa"):
+            for key in UC_IDENTITY_FIELDS["wdpa_pid"]:
                 self._add_identity(wdpa_pids, properties.get(key))
             geometry = feature.get("geometry")
             if len(features) == 1:
@@ -660,13 +661,12 @@ class SubmissionService:
         explicit = metadata.get("name")
         if explicit is not None and str(explicit).strip():
             return str(explicit).strip()
-        candidates = ("nm_uc", "nome_uc", "nm_unid_con", "nome", "name")
         for feature in canonical_geojson.get("features", []):
             properties = {
                 str(key).casefold(): value
                 for key, value in (feature.get("properties") or {}).items()
             }
-            for key in candidates:
+            for key in UC_NAME_FIELDS:
                 value = properties.get(key)
                 if value is not None and str(value).strip():
                     return str(value).strip()
@@ -677,12 +677,8 @@ class SubmissionService:
         canonical_geojson: dict[str, Any],
     ) -> tuple[list[ValidationIssue], list[dict[str, Any]]]:
         """Require independent names and strong identities in an atomic UC batch."""
-        identity_fields = {
-            "official_identifier": ("uc_id", "id_uc"),
-            "cd_cnuc": ("cd_cnuc", "cod_cnuc", "cnuc"),
-            "wdpa_pid": ("wdpa_pid", "wdpaid", "wdpa"),
-        }
-        name_fields = ("nm_uc", "nome_uc", "nm_unid_con", "nome", "name")
+        identity_fields = UC_IDENTITY_FIELDS
+        name_fields = UC_NAME_FIELDS
         seen = {field: set() for field in identity_fields}
         seen_geometries: set[str] = set()
         errors: list[ValidationIssue] = []
