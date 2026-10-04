@@ -70,7 +70,7 @@ UC_COLUMNS: tuple[ColumnSpec, ...] = (
         "uc.wdpa_pid",
     ),
     ColumnSpec(
-        "uc_id", ColumnType.TEXT, ColumnRequirement.STRONG_IDENTITY, ("id_uc", "id", "gid"), "SC-UC-0001",
+        "uc_id", ColumnType.TEXT, ColumnRequirement.STRONG_IDENTITY, ("id_uc", "id", "gid"), "786",
         "Identificador oficial da UC na fonte. Só `uc_id` e `id_uc` contam como identificador forte; "
         "`id` e `gid` são lidos pelo pipeline, mas não identificam a UC na checagem de duplicidade.",
         "uc.uc_id",
@@ -137,7 +137,7 @@ OFFICIAL_ZONE_COLUMNS: tuple[ColumnSpec, ...] = (
         "Código CNUC da UC dona da zona, para conferência.", "za_oficial.cd_cnuc_source",
     ),
     ColumnSpec(
-        "uc_id", ColumnType.TEXT, ColumnRequirement.OPTIONAL, ("id_uc",), "SC-UC-0001",
+        "uc_id", ColumnType.TEXT, ColumnRequirement.OPTIONAL, ("id_uc",), "786",
         "Identificador da UC na fonte da zona.", "za_oficial.uc_id_source",
     ),
     ColumnSpec(
