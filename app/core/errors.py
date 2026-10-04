@@ -11,6 +11,7 @@ class AppError(Exception):
     title: str
     detail: str
     violations: list[dict[str, Any]] = field(default_factory=list)
+    headers: dict[str, str] = field(default_factory=dict)
 
     def __str__(self) -> str:
         return self.detail

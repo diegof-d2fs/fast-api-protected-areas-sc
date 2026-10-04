@@ -95,3 +95,93 @@ class FakeAuthRepository:
             for logged_username, sucesso, criado_em in self.login_attempts
             if logged_username == username and not sucesso and criado_em >= since
         )
+
+
+class FakeEventModeRepository:
+    """Repositório em memória com as mesmas garantias do Postgres: um evento aberto e versão."""
+
+    def __init__(self) -> None:
+        self.records: dict = {}
+        self.audits: list[tuple[int, int | None, str, str | None]] = []
+
+    def get_open(self):
+        from app.domain.event_mode import OPEN_STATUSES
+
+        return next((replace(r) for r in self.records.values() if r.status in OPEN_STATUSES), None)
+
+    def get(self, event_id: int):
+        record = self.records.get(event_id)
+        return replace(record) if record else None
+
+    def find_by_idempotency_key(self, key: str):
+        return next((replace(r) for r in self.records.values() if r.idempotency_key == key), None)
+
+    def create(self, record):
+        from app.application.event_mode import EventAlreadyOpenError
+
+        if self.get_open() is not None:
+            raise EventAlreadyOpenError()
+        created = replace(record, id=len(self.records) + 1, version=1)
+        self.records[created.id] = created
+        return replace(created)
+
+    def update(self, record):
+        from app.application.event_mode import EventVersionConflictError
+
+        stored = self.records[record.id]
+        if stored.version != record.version:
+            raise EventVersionConflictError()
+        updated = replace(record, version=record.version + 1)
+        self.records[record.id] = updated
+        return replace(updated)
+
+    def list_recent(self, limit: int):
+        return [replace(r) for r in sorted(self.records.values(), key=lambda r: -r.id)[:limit]]
+
+    def audit(self, event_id: int, user_id: int | None, action: str, detail: str | None = None) -> None:
+        self.audits.append((event_id, user_id, action, detail))
+
+
+@dataclass
+class FakeAutomation:
+    started: list[tuple[str, int, str]] = field(default_factory=list)
+    executions: dict = field(default_factory=dict)
+    fail_start: bool = False
+
+    def start(self, action: str, *, event_id: int, db_login: str, login_valid_until: datetime) -> str:
+        from app.domain.event_mode import AutomationExecution, AutomationStatus
+
+        if self.fail_start:
+            raise RuntimeError("AccessDenied")
+        execution_id = f"exec-{len(self.started) + 1}"
+        self.started.append((action, event_id, db_login))
+        self.executions[execution_id] = AutomationExecution(AutomationStatus.RUNNING, current_step="pararServidor")
+        return execution_id
+
+    def get(self, execution_id: str):
+        return self.executions[execution_id]
+
+    def finish(self, execution_id: str, *, success: bool = True, message: str | None = None) -> None:
+        from app.domain.event_mode import AutomationExecution, AutomationStatus
+
+        status = AutomationStatus.SUCCESS if success else AutomationStatus.FAILED
+        self.executions[execution_id] = AutomationExecution(status, failure_message=message)
+
+
+@dataclass
+class FakeReturnGuard:
+    scheduled: dict[int, datetime] = field(default_factory=dict)
+
+    def schedule(self, *, event_id: int, at: datetime, db_login: str) -> None:
+        self.scheduled[event_id] = at
+
+    def delete(self, event_id: int) -> None:
+        self.scheduled.pop(event_id, None)
+
+
+@dataclass
+class FakeEventSecrets:
+    passwords: dict[int, str] = field(default_factory=dict)
+
+    def db_password(self, event_id: int) -> str | None:
+        return self.passwords.get(event_id)

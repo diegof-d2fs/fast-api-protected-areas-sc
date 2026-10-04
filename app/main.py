@@ -16,18 +16,22 @@ from app.api.health import router as health_router
 from app.api.v1.auth_routes import router as auth_router
 from app.api.v1.batch_routes import router as batch_router
 from app.api.v1.dictionary_routes import router as dictionary_router
+from app.api.v1.event_mode_routes import router as event_mode_router
 from app.api.v1.routes import router as v1_router
 from app.api.v1.ucs_routes import router as ucs_router
 from app.application.auth import AuthService
+from app.application.event_mode import EventModeService, EventModeSettings
 from app.application.submissions import SubmissionService
 from app.application.ucs import UCService
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 from app.core.logging import configure_logging
+from app.domain.models import SubmissionStatus
 from app.infrastructure.airflow.client import AirflowClient
 from app.infrastructure.compute.ec2 import ProcessingNodeWaker
 from app.infrastructure.geospatial.validator import GeospatialValidator
 from app.infrastructure.persistence.auth_repository import PostgresAuthRepository
+from app.infrastructure.persistence.event_mode_repository import PostgresEventModeRepository
 from app.infrastructure.persistence.postgres_ucs import PostgresUCRepository
 from app.infrastructure.persistence.sqlite import SqliteSubmissionRepository
 from app.infrastructure.storage.bronze import LocalBronzePublisher
@@ -57,6 +61,73 @@ def _cloud_integrations(configured: Settings, local_publisher: LocalBronzePublis
         S3PipelineResults(s3, configured.s3_lake_bucket),
         waker,
     )
+
+
+def _event_mode_service(configured: Settings, repository) -> EventModeService:
+    """Monta o serviço do modo eventos; sem a automação configurada, as rotas respondem 503."""
+    automation = return_guard = secrets = None
+    if (
+        configured.serving_instance_id
+        and configured.event_mode_activate_document
+        and configured.event_mode_deactivate_document
+    ):
+        import boto3
+
+        from app.infrastructure.compute.event_mode_aws import (
+            SchedulerReturnGuard,
+            SsmEventAutomation,
+            SsmEventSecrets,
+        )
+
+        ssm = boto3.client("ssm", region_name=configured.aws_region)
+        automation = SsmEventAutomation(
+            ssm,
+            activate_document=configured.event_mode_activate_document,
+            deactivate_document=configured.event_mode_deactivate_document,
+            instance_id=configured.serving_instance_id,
+            normal_instance_type=configured.event_mode_normal_instance_type,
+            event_instance_type=configured.event_mode_event_instance_type,
+        )
+        secrets = SsmEventSecrets(ssm, configured.event_mode_secret_prefix)
+        if configured.event_mode_scheduler_group and configured.event_mode_scheduler_role_arn:
+            return_guard = SchedulerReturnGuard(
+                boto3.client("scheduler", region_name=configured.aws_region),
+                group=configured.event_mode_scheduler_group,
+                role_arn=configured.event_mode_scheduler_role_arn,
+                deactivate_document=configured.event_mode_deactivate_document,
+                instance_id=configured.serving_instance_id,
+                normal_instance_type=configured.event_mode_normal_instance_type,
+            )
+    in_flight = (SubmissionStatus.RECEIVED, SubmissionStatus.VALIDATING)
+    return EventModeService(
+        PostgresEventModeRepository(configured.database_dsn),
+        EventModeSettings(
+            normal_instance_type=configured.event_mode_normal_instance_type,
+            event_instance_type=configured.event_mode_event_instance_type,
+            min_active_minutes=configured.event_mode_min_active_minutes,
+            default_duration_hours=configured.event_mode_default_duration_hours,
+            max_duration_hours=configured.event_mode_max_duration_hours,
+            extra_cost_usd_per_hour=configured.event_mode_extra_cost_usd_per_hour,
+            region=configured.aws_region,
+            db_host=configured.public_db_host,
+            db_name=configured.public_db_name,
+            ogc_base_url=configured.public_ogc_base_url,
+        ),
+        automation=automation,
+        return_guard=return_guard,
+        secrets=secrets,
+        imports_in_flight=lambda: len(repository.list_by_status(list(in_flight))),
+    )
+
+
+async def _event_mode_forever(service: EventModeService, interval_seconds: float) -> None:
+    logger = logging.getLogger(__name__)
+    while True:
+        await asyncio.sleep(interval_seconds)
+        try:
+            await asyncio.to_thread(service.tick)
+        except Exception:
+            logger.exception("event mode tick failed")
 
 
 async def _dispatch_forever(service: SubmissionService, interval_seconds: float) -> None:
@@ -138,6 +209,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.uc_repository = uc_repository
         app.state.uc_service = uc_service
         app.state.auth_service = auth_service
+        app.state.event_mode_service = (
+            _event_mode_service(configured, repository) if configured.database_dsn else None
+        )
+        event_ticker = None
+        if app.state.event_mode_service is not None and app.state.event_mode_service.automation is not None:
+            event_ticker = asyncio.create_task(_event_mode_forever(app.state.event_mode_service, 60.0))
         dispatcher = None
         if airflow_client is not None and configured.dispatch_interval_seconds > 0:
             dispatcher = asyncio.create_task(
@@ -146,6 +223,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         yield
         if dispatcher is not None:
             dispatcher.cancel()
+        if event_ticker is not None:
+            event_ticker.cancel()
 
     app = FastAPI(
         title=configured.app_name,
@@ -242,7 +321,7 @@ uma alteração cadastral pontual.
 
     @app.exception_handler(AppError)
     async def app_error_handler(request: Request, exc: AppError) -> JSONResponse:
-        return _problem_response(
+        response = _problem_response(
             request,
             status_code=exc.status_code,
             title=exc.title,
@@ -250,6 +329,8 @@ uma alteração cadastral pontual.
             error_code=exc.error_code,
             violations=exc.violations,
         )
+        response.headers.update(exc.headers)
+        return response
 
     @app.exception_handler(RequestValidationError)
     async def request_validation_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
@@ -302,6 +383,7 @@ uma alteração cadastral pontual.
     app.include_router(batch_router)
     app.include_router(auth_router)
     app.include_router(dictionary_router)
+    app.include_router(event_mode_router)
     return app
 
 

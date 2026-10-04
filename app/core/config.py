@@ -69,6 +69,24 @@ class Settings(BaseSettings):
     # Cabeçalho com o IP real do cliente atrás de um proxy confiável (ex.: CloudFront-Viewer-Address).
     # Só deve ser configurado quando a API não é alcançável diretamente pela internet.
     client_ip_header: str | None = None
+    # Modo eventos: o nó de serviço é ampliado por automação SSM disparada pelo painel. Sem
+    # `serving_instance_id` e os dois documentos, as rotas existem mas respondem 503.
+    serving_instance_id: str | None = None
+    event_mode_activate_document: str | None = None
+    event_mode_deactivate_document: str | None = None
+    event_mode_scheduler_group: str | None = None
+    event_mode_scheduler_role_arn: str | None = None
+    event_mode_secret_prefix: str = "/pa-sc/prod/event-mode"
+    event_mode_normal_instance_type: str = "t3a.small"
+    event_mode_event_instance_type: str = "t3a.large"
+    event_mode_min_active_minutes: int = Field(default=30, ge=1)
+    event_mode_default_duration_hours: float = Field(default=5.0, gt=0)
+    event_mode_max_duration_hours: float = Field(default=24.0, gt=0)
+    # Diferença on-demand t3a.large − t3a.small em us-east-1 (US$ 0,0752 − 0,0188 por hora).
+    event_mode_extra_cost_usd_per_hour: float = Field(default=0.0564, ge=0)
+    public_db_host: str = "pa-sc.c8rw4kcekjcv.us-east-1.rds.amazonaws.com"
+    public_db_name: str = "protected_areas_sc"
+    public_ogc_base_url: str = "https://areasprotegidas-sc.com/geoserver/protected_areas_sc/"
     airflow_base_url: str | None = None
     airflow_username: str | None = None
     airflow_password: str | None = None
