@@ -208,3 +208,17 @@ seguro com `ZA_CREATE_REQUIRES_BATCH` — cadastrar UC e ZA novas juntas exige o
 
 - `docs/GUIA_TESTES_POSTMAN.md`: roteiro manual completo de criação, duplicidade e atualização;
 - `docs/DEVELOPMENT_STANDARDS.md`: padrões de código e de documentação dos três repositórios.
+
+
+## CI/CD na AWS
+
+O workflow [.github/workflows/ci.yml](.github/workflows/ci.yml) executa os testes e o ruff
+em pushes no main e pull requests. Depois dos testes, um push no main publica a imagem
+no ECR, confere/aplica as migrations do RDS, troca o contêiner da API via SSM e verifica
+https://areasprotegidas-sc.com/api/v1/health/live.
+
+O deploy exige a variável de repositório AWS_DEPLOY_ROLE_ARN, fornecida pelo módulo ci
+do repositório de infraestrutura. A autenticação usa GitHub OIDC e credenciais temporárias;
+a confiança da AWS exige este repositório e a branch main. Senhas vêm do SSM e são
+mascaradas no job de migration. As migrations já aplicadas só são aceitas quando seus
+checksums correspondem aos arquivos da versão publicada.
