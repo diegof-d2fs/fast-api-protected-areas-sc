@@ -153,8 +153,10 @@ class EventModeService:
             default_duration_hours=self.settings.default_duration_hours,
             max_duration_hours=self.settings.max_duration_hours,
             extra_cost_usd_per_hour=self.settings.extra_cost_usd_per_hour,
+            # Medidos no ensaio de 04/10/2026: ativação em 4 min 20 s, retorno em 3 min 21 s, site
+            # fora do ar por cerca de 1 min 30 s a 2 min em cada troca.
             estimated_activation_minutes="5",
-            estimated_downtime_minutes="3 a 5",
+            estimated_downtime_minutes="cerca de 2",
             estimated_full_performance_minutes="15 a 20",
             recommended_lead_minutes=30,
         )
@@ -389,6 +391,10 @@ class EventModeService:
             record.status = EventStatus.FAILED
             record.failure_message = "Não foi possível iniciar a automação na AWS."
             self._save(record)
+            if action == "activate":
+                # Sem ampliação, não há o que devolver; um retorno de segurança esquecido aqui
+                # poderia reduzir a máquina no meio de um evento posterior.
+                self._delete_guard(record.id)
             self.repository.audit(record.id, user_id, "falhou", record.failure_message)
             raise AppError(
                 502,

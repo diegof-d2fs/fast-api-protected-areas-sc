@@ -74,7 +74,7 @@ def history(_admin: AdminUser, service: Service) -> list[EventView]:
     status_code=202,
     summary="Ativar ou agendar o modo eventos",
     description=(
-        "Sem `inicio`, amplia o servidor agora: o sistema fica de 3 a 5 minutos fora do ar. Com `inicio`, "
+        "Sem `inicio`, amplia o servidor agora: o sistema fica cerca de 2 minutos fora do ar. Com `inicio`, "
         "agenda a ampliação. O retorno ao tamanho normal é sempre automático no horário definido. "
         'Exige `confirmacao` igual a "ATIVAR" e o cabeçalho `Idempotency-Key`.'
     ),
@@ -107,7 +107,7 @@ def extend(admin: AdminUser, service: Service, event_id: EventId, payload: Exten
     status_code=202,
     summary="Desativar o modo eventos",
     description=(
-        "Volta o servidor ao tamanho normal (3 a 5 minutos fora do ar). Só é liberado depois do tempo "
+        "Volta o servidor ao tamanho normal (cerca de 2 minutos fora do ar). Só é liberado depois do tempo "
         'mínimo de permanência; antes disso responde 409 com `Retry-After`. Exige `confirmacao` igual a "DESATIVAR".'
     ),
     operation_id="deactivate_event_mode",

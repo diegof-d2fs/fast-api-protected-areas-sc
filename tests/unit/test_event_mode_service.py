@@ -238,6 +238,7 @@ def test_automation_start_failure_is_reported_without_blocking_a_new_attempt(env
     assert error.value.status_code == 502
     assert env["service"].history()[0].status is EventStatus.FAILED
     assert env["service"].state().current is None
+    assert env["guard"].scheduled == {}
 
     env["automation"].fail_start = False
     retried = activate(env["service"], key="k2")
