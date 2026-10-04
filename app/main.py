@@ -236,9 +236,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         description="""
 ## Finalidade
 
-API REST do TCC 3 para receber e acompanhar **importações geoespaciais** de Unidades de
-Conservação (UCs) e Zonas de Amortecimento oficiais (ZAs). Buffers de Abrangência não são enviados:
-são derivados da geometria da UC pelo pipeline.
+API REST do produto Áreas Protegidas SC para receber e acompanhar **importações geoespaciais** de
+Unidades de Conservação (UCs) e Zonas de Amortecimento oficiais (ZAs). Buffers de Abrangência não
+são enviados: são derivados da geometria da UC pelo pipeline.
 
 ## Fluxo de escrita geoespacial
 
@@ -261,17 +261,17 @@ e preservam o mesmo `id_uc`, o histórico geométrico e a auditoria transacional
 No cadastro pontual, a `DAG_UCS` persiste a UC como `Point` e a `DAG_ZA_BUFFER` gera separadamente
 o Buffer de Abrangência de 3.000 m; a FastAPI não cria esse buffer.
 Uma ZA oficial posterior usa `za_oficial/replace_buffer_abrangencia`: o Airflow encerra o Buffer de Abrangência, ativa/versiona a
-ZA e registra auditoria na mesma transação. `za_oficial/create` isolado permanece bloqueado e
-será usado apenas no lote atômico UC+ZA novas. No fluxo agendado legado, uma ZA autoritativa com
-`ds_fonte` que já esteja na Bronze pode ser descoberta quando sua UC passar a existir; esse
-vínculo espacial não é permitido nas importações dirigidas pela API.
-Se o Airflow estiver indisponível, a importação publicada fica `PUBLISHED` e é disparada
-automaticamente quando o processamento voltar; se a Bronze estiver indisponível, a operação falha de
-modo seguro e pode ser retomada.
-No incremento atual, `DAG_PRODES`, `DAG_MAPBIOMAS_ALERTA` e `DAG_MAPBIOMAS` participam do
-encadeamento dirigido. `DAG_FIRMS` está implementada, mas roda fora dessa cadeia por desenho: sua
-aquisição diária reaproveita o snapshot cadastral vigente e não deve repetir download por causa de
-uma alteração cadastral pontual.
+ZA e registra auditoria na mesma transação. `za_oficial/create` pode ser validada, mas não é
+publicada isoladamente: uma UC nova com ZA oficial é publicada pelo lote atômico de `/import-batches`. No fluxo agendado, uma ZA
+autoritativa com `ds_fonte` que já esteja na Bronze pode ser descoberta quando sua UC passar a
+existir; esse vínculo espacial não é permitido nas importações dirigidas pela API.
+Se o Airflow estiver indisponível, a importação publicada fica `PUBLISHED`, a API liga a máquina
+de processamento e reenvia a importação até o Airflow aceitá-la; se a Bronze estiver indisponível,
+a operação falha de modo seguro e pode ser retomada.
+O encadeamento dirigido inclui `DAG_PRODES`, `DAG_MAPBIOMAS_ALERTA`, `DAG_MAPBIOMAS` e
+`DAG_FIRMS_RECROSS`. Esta última leva à geometria nova todo o histórico de focos já publicado na
+Silver, sem nova consulta à NASA. A aquisição de focos (`DAG_FIRMS`) é semanal e independente da
+cadeia, para que uma alteração cadastral não repita downloads externos.
 """,
         openapi_tags=[
             {
