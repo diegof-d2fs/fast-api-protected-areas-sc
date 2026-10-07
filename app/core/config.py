@@ -55,6 +55,7 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = True
     reporting_geoserver_db_password: str | None = None
     reporting_powerbi_db_password: str | None = None
+    reporting_lab_db_password: str | None = None
     bronze_root: Path | None = None
     # "local": Bronze e resultados do pipeline em disco compartilhado (desenvolvimento).
     # "s3": Bronze espelhada em `s3_bronze_bucket` e resultados lidos de `s3_lake_bucket`;

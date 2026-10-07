@@ -54,13 +54,14 @@ jobs:
       - name: Migrations
         run: |
           secret() { aws ssm get-parameter --with-decryption --name "/pa-sc/prod/$1" --query Parameter.Value --output text; }
-          owner="$(secret db/owner_password)"; geoserver="$(secret db/reporting_geoserver_password)"; powerbi="$(secret db/reporting_powerbi_password)"
-          echo "::add-mask::$owner"; echo "::add-mask::$geoserver"; echo "::add-mask::$powerbi"
+          owner="$(secret db/owner_password)"; geoserver="$(secret db/reporting_geoserver_password)"; powerbi="$(secret db/reporting_powerbi_password)"; lab="$(secret db/reporting_lab_password)"
+          echo "::add-mask::$owner"; echo "::add-mask::$geoserver"; echo "::add-mask::$powerbi"; echo "::add-mask::$lab"
           host="$(aws rds describe-db-instances --db-instance-identifier pa-sc --query 'DBInstances[0].Endpoint.Address' --output text)"
           docker run --rm \
             -e PA_SC_DATABASE_DSN="postgresql://pa_owner:${owner}@${host}:5432/protected_areas_sc?sslmode=require" \
             -e PA_SC_REPORTING_GEOSERVER_DB_PASSWORD="$geoserver" \
             -e PA_SC_REPORTING_POWERBI_DB_PASSWORD="$powerbi" \
+            -e PA_SC_REPORTING_LAB_DB_PASSWORD="$lab" \
             "${{ steps.image.outputs.image }}" python -m app.infrastructure.persistence.migrate
 
       - name: Trocar a API no nó de serviço

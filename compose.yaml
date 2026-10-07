@@ -59,6 +59,7 @@ services:
       PA_SC_DATABASE_DSN: ${PA_SC_DATABASE_DSN:-postgresql://project:project@protected-areas-sc-db-main:5432/protected-areas-sc-db-main}
       PA_SC_REPORTING_GEOSERVER_DB_PASSWORD: ${PA_SC_REPORTING_GEOSERVER_DB_PASSWORD:-}
       PA_SC_REPORTING_POWERBI_DB_PASSWORD: ${PA_SC_REPORTING_POWERBI_DB_PASSWORD:-}
+      PA_SC_REPORTING_LAB_DB_PASSWORD: ${PA_SC_REPORTING_LAB_DB_PASSWORD:-}
     command: ["python", "-m", "app.infrastructure.persistence.migrate"]
     networks:
       - pipeline

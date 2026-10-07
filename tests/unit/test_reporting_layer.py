@@ -62,3 +62,11 @@ def test_every_view_declares_primary_key_for_geoserver_paging() -> None:
 def test_provisioning_rejects_unknown_role_before_connecting() -> None:
     with pytest.raises(ValueError, match="desconhecidos"):
         provision_reporting_credentials("postgresql://unused", {"project": "x"})
+
+
+def test_lab_login_is_read_only_member_of_reporting_with_its_own_limits() -> None:
+    sql = (MIGRATION.parent / "007_reporting_lab_login.sql").read_text(encoding="utf-8")
+    assert "CREATE ROLE lab_svc LOGIN PASSWORD NULL CONNECTION LIMIT 12 IN ROLE reporting_readonly" in sql
+    assert "ALTER ROLE lab_svc SET default_transaction_read_only = on" in sql
+    assert "ALTER ROLE lab_svc SET statement_timeout = '220s'" in sql
+    assert "ALTER ROLE lab_svc SET search_path = reporting, public" in sql

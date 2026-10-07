@@ -8,8 +8,8 @@ from psycopg import sql
 
 from app.core.config import get_settings
 
-# Logins criados sem senha pela migração 005; o login fica bloqueado até esta etapa rodar.
-REPORTING_LOGIN_ROLES = ("geoserver_svc", "powerbi_svc")
+# Logins criados sem senha pelas migrações 005 e 007; o login fica bloqueado até esta etapa rodar.
+REPORTING_LOGIN_ROLES = ("geoserver_svc", "powerbi_svc", "lab_svc")
 
 
 def apply_migrations(dsn: str, migrations_dir: Path | None = None) -> list[str]:
@@ -74,6 +74,7 @@ def main() -> None:
     passwords = {
         "geoserver_svc": settings.reporting_geoserver_db_password,
         "powerbi_svc": settings.reporting_powerbi_db_password,
+        "lab_svc": settings.reporting_lab_db_password,
     }
     provisioned = provision_reporting_credentials(settings.database_dsn, passwords)
     for role in REPORTING_LOGIN_ROLES:
