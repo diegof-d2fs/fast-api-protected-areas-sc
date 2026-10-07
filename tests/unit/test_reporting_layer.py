@@ -20,8 +20,28 @@ _VIEW = re.compile(
 AUDIT_COLUMNS = {"ator", "motivo", "correlation_id", "import_id", "dag_run_id", "criado_por", "run_id"}
 
 
-def _views() -> dict[str, str]:
-    return {name: body for name, body in _VIEW.findall(MIGRATION.read_text(encoding="utf-8"))}
+def _views(paths: list[Path] | None = None) -> dict[str, str]:
+    """Definição vigente de cada view: a última migração que a recria prevalece."""
+    views: dict[str, str] = {}
+    for path in paths or sorted(MIGRATION.parent.glob("*.sql")):
+        views.update(_VIEW.findall(path.read_text(encoding="utf-8")))
+    return views
+
+
+def _columns(body: str) -> list[str]:
+    """Nome de saída de cada coluna selecionada (o alias, quando houver)."""
+    select = body.split("FROM public.", 1)[0]
+    items, depth, current = [], 0, ""
+    for char in select:
+        depth += char == "("
+        depth -= char == ")"
+        if char == "," and depth == 0:
+            items.append(current)
+            current = ""
+        else:
+            current += char
+    items.append(current)
+    return [re.findall(r"[\w.]+", item.strip())[-1].split(".")[-1] for item in items]
 
 
 def test_reporting_publishes_expected_views() -> None:
@@ -70,3 +90,22 @@ def test_lab_login_is_read_only_member_of_reporting_with_its_own_limits() -> Non
     assert "ALTER ROLE lab_svc SET default_transaction_read_only = on" in sql
     assert "ALTER ROLE lab_svc SET statement_timeout = '220s'" in sql
     assert "ALTER ROLE lab_svc SET search_path = reporting, public" in sql
+
+
+def test_period_columns_are_appended_without_reordering_published_columns() -> None:
+    original = _views([MIGRATION])
+    current = _views()
+    expected_new = {
+        "firms_clip": ["dt_deteccao_local", "nr_ano", "nr_mes"],
+        "mapbiomas_alerta_clip": ["nr_ano", "nr_mes"],
+        "mapbiomas_clip": ["nr_ano"],
+    }
+    for view, added in expected_new.items():
+        before, after = _columns(original[view]), _columns(current[view])
+        assert after == before + added, view
+    assert "nr_ano" in _columns(current["prodes_clip"])
+
+
+def test_firms_period_uses_brasilia_date() -> None:
+    body = _views()["firms_clip"]
+    assert body.count("AT TIME ZONE 'America/Sao_Paulo'") == 3
