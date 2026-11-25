@@ -35,6 +35,12 @@ class SqliteSubmissionRepository:
                 )
                 """
             )
+            # Histórico por conta: `actor_id` vem da sessão e já está em todo payload gravado,
+            # inclusive nos anteriores a esta consulta, então o índice cobre o acervo existente.
+            connection.execute(
+                "CREATE INDEX IF NOT EXISTS idx_submission_actor_created "
+                "ON submission (json_extract(payload_json, '$.metadata_payload.actor_id'), created_at)"
+            )
 
     def create_or_get(self, item: Submission) -> tuple[Submission, bool]:
         payload = item.model_dump_json()
@@ -165,6 +171,22 @@ class SqliteSubmissionRepository:
                 f"WHERE json_extract(payload_json, '$.status') IN ({placeholders}) "
                 f"ORDER BY created_at",
                 [status.value for status in statuses],
+            ).fetchall()
+        return [Submission.model_validate_json(row["payload_json"]) for row in rows]
+
+    def list_by_actor(self, actor_id: int, *, limit: int, offset: int) -> list[Submission]:
+        """Return the actor's submissions, newest first.
+
+        Imports grouped into a UC+ZA batch are left out: the batch itself is the operation the
+        operator started, and listing its members too would show the same intent three times.
+        """
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT payload_json FROM submission "
+                "WHERE json_extract(payload_json, '$.metadata_payload.actor_id') = ? "
+                "AND submission_id NOT IN (SELECT import_id FROM import_batch_member) "
+                "ORDER BY created_at DESC, submission_id DESC LIMIT ? OFFSET ?",
+                (actor_id, limit, offset),
             ).fetchall()
         return [Submission.model_validate_json(row["payload_json"]) for row in rows]
 

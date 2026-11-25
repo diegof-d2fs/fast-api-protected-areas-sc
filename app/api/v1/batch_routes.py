@@ -83,6 +83,9 @@ def create_batch(
             **uc.metadata_payload,
             "official_identifier": uc.metadata_payload.get("official_identifier") or properties.get("uc_id") or uc.submission_id,
             "actor": f"user:{user.id}:{user.nome}",
+            # Sem isso o lote herdaria o `actor_id` de quem validou a UC, e o histórico o
+            # mostraria na conta errada quando outra pessoa agrupa as importações.
+            "actor_id": user.id,
             "batch_members": payload.model_dump(),
             "official_zone": {
                 "canonical_key": za.canonical_key, "original_key": za.original_key,

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, File, Form, Header, Path, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, Form, Header, Path, Query, Request, UploadFile, status
 
 from app.api.dependencies import get_current_user, get_submission_service
 from app.application.submissions import SubmissionService
@@ -11,6 +11,7 @@ from app.domain.auth import CurrentUser
 from app.domain.metadata import parse_metadata
 from app.domain.models import (
     DuplicatePolicy,
+    ImportHistoryPage,
     ProblemDetail,
     SubmissionDomain,
     SubmissionOperation,
@@ -173,6 +174,34 @@ async def create_geospatial_import(
         correlation_id=request.state.correlation_id,
     )
     return SubmissionView.from_submission(submission)
+
+
+@router.get(
+    "/imports",
+    response_model=ImportHistoryPage,
+    summary="Listar as importações da conta autenticada",
+    description=(
+        "Histórico da conta da sessão, da importação mais recente para a mais antiga, com o estado "
+        "gravado na última consulta. Lotes UC+ZA aparecem uma vez, pelo próprio lote, e não pelas "
+        "duas importações que o compõem. Para o estado atualizado de uma importação ainda em "
+        "andamento, consulte `/imports/{import_id}`."
+    ),
+    response_description="Uma página do histórico da conta.",
+    operation_id="list_my_geospatial_imports",
+)
+def list_my_geospatial_imports(
+    limit: Annotated[int, Query(ge=1, le=100, description="Tamanho máximo da página.")] = 50,
+    offset: Annotated[int, Query(ge=0, description="Quantidade de importações a pular.")] = 0,
+    service: SubmissionService = Depends(get_submission_service),
+    current_user: CurrentUser = Depends(get_current_user),
+) -> ImportHistoryPage:
+    items, has_more = service.list_for_actor(current_user.id, limit=limit, offset=offset)
+    return ImportHistoryPage(
+        items=[SubmissionView.from_submission(item) for item in items],
+        limit=limit,
+        offset=offset,
+        has_more=has_more,
+    )
 
 
 @router.get(
