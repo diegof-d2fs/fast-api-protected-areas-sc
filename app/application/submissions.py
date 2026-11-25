@@ -306,6 +306,11 @@ class SubmissionService:
     def get(self, import_id: str) -> Submission:
         return self.repository.get(import_id)
 
+    def list_for_actor(self, actor_id: int, *, limit: int, offset: int) -> tuple[list[Submission], bool]:
+        """Return one page of the actor's imports and whether another page follows."""
+        items = self.repository.list_by_actor(actor_id, limit=limit + 1, offset=offset)
+        return items[:limit], len(items) > limit
+
     def get_with_pipeline_state(self, import_id: str) -> Submission:
         item = self.get(import_id)
         if (

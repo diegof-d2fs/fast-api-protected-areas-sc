@@ -146,6 +146,10 @@ class SubmissionView(BaseModel):
         default_factory=list, description="Correspondências existentes encontradas por feição."
     )
     batch_items: list[dict[str, Any]] = Field(default_factory=list)
+    geometry_types: list[str] = Field(
+        default_factory=list,
+        description="Tipos geométricos do arquivo após a validação; vazio antes dela ou em comandos sem arquivo.",
+    )
     created_at: datetime = Field(description="Criação em UTC.")
     updated_at: datetime = Field(description="Última atualização em UTC.")
     links: dict[str, str] = Field(description="Links relativos para acompanhamento.")
@@ -176,10 +180,18 @@ class SubmissionView(BaseModel):
             error_detail=item.error_detail,
             duplicate_matches=item.duplicate_matches,
             batch_items=item.batch_items,
+            geometry_types=item.validation.geometry_types if item.validation else [],
             created_at=item.created_at,
             updated_at=item.updated_at,
             links={"self": base, "validation": f"{base}/validation"},
         )
+
+
+class ImportHistoryPage(BaseModel):
+    items: list[SubmissionView] = Field(description="Importações da conta, da mais recente para a mais antiga.")
+    limit: int = Field(description="Tamanho máximo da página pedida.")
+    offset: int = Field(description="Quantidade de importações puladas antes desta página.")
+    has_more: bool = Field(description="Indica se existe ao menos mais uma importação depois desta página.")
 
 
 class ProblemDetail(BaseModel):
