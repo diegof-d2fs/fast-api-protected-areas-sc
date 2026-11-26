@@ -115,6 +115,14 @@ class Submission(BaseModel):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+def _actor_name(actor: Any) -> str | None:
+    """Display name from the session actor recorded at submission time (`user:<id>:<nome>`)."""
+    if not isinstance(actor, str) or not actor.startswith("user:"):
+        return None
+    parts = actor.split(":", 2)
+    return parts[2] if len(parts) == 3 and parts[2] else None
+
+
 class SubmissionView(BaseModel):
     import_id: str = Field(description="Identificador estável da importação.")
     status: SubmissionStatus = Field(description="Estado atual do processamento.")
@@ -146,6 +154,10 @@ class SubmissionView(BaseModel):
         default_factory=list, description="Correspondências existentes encontradas por feição."
     )
     batch_items: list[dict[str, Any]] = Field(default_factory=list)
+    submitted_by: str | None = Field(
+        default=None,
+        description="Nome da conta que enviou a importação, gravado a partir da sessão no envio.",
+    )
     geometry_types: list[str] = Field(
         default_factory=list,
         description="Tipos geométricos do arquivo após a validação; vazio antes dela ou em comandos sem arquivo.",
@@ -180,6 +192,7 @@ class SubmissionView(BaseModel):
             error_detail=item.error_detail,
             duplicate_matches=item.duplicate_matches,
             batch_items=item.batch_items,
+            submitted_by=_actor_name(item.metadata_payload.get("actor")),
             geometry_types=item.validation.geometry_types if item.validation else [],
             created_at=item.created_at,
             updated_at=item.updated_at,
