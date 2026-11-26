@@ -1,13 +1,13 @@
 from __future__ import annotations
 
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, File, Form, Header, Path, Query, Request, UploadFile, status
 
 from app.api.dependencies import get_current_user, get_submission_service
 from app.application.submissions import SubmissionService
 from app.core.errors import AppError
-from app.domain.auth import CurrentUser
+from app.domain.auth import CurrentUser, UserRole
 from app.domain.metadata import parse_metadata
 from app.domain.models import (
     DuplicatePolicy,
@@ -181,7 +181,8 @@ async def create_geospatial_import(
     response_model=ImportHistoryPage,
     summary="Listar as importações da conta autenticada",
     description=(
-        "Histórico da conta da sessão, da importação mais recente para a mais antiga, com o estado "
+        "Histórico da conta da sessão (`scope=mine`, padrão) ou, só para administradores, de todas "
+        "as contas (`scope=all`), da importação mais recente para a mais antiga, com o estado "
         "gravado na última consulta. Lotes UC+ZA aparecem uma vez, pelo próprio lote, e não pelas "
         "duas importações que o compõem. Para o estado atualizado de uma importação ainda em "
         "andamento, consulte `/imports/{import_id}`."
@@ -192,10 +193,19 @@ async def create_geospatial_import(
 def list_my_geospatial_imports(
     limit: Annotated[int, Query(ge=1, le=100, description="Tamanho máximo da página.")] = 50,
     offset: Annotated[int, Query(ge=0, description="Quantidade de importações a pular.")] = 0,
+    scope: Annotated[
+        Literal["mine", "all"],
+        Query(description="`mine`: só a conta da sessão. `all`: todas as contas, exige administrador."),
+    ] = "mine",
     service: SubmissionService = Depends(get_submission_service),
     current_user: CurrentUser = Depends(get_current_user),
 ) -> ImportHistoryPage:
-    items, has_more = service.list_for_actor(current_user.id, limit=limit, offset=offset)
+    if scope == "all" and current_user.role != UserRole.ADMIN:
+        raise AppError(
+            403, "FORBIDDEN_ROLE", "Acesso negado", "Ver as importações de todas as contas exige o papel 'admin'."
+        )
+    actor_id = None if scope == "all" else current_user.id
+    items, has_more = service.list_for_actor(actor_id, limit=limit, offset=offset)
     return ImportHistoryPage(
         items=[SubmissionView.from_submission(item) for item in items],
         limit=limit,

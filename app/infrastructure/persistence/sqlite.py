@@ -174,19 +174,23 @@ class SqliteSubmissionRepository:
             ).fetchall()
         return [Submission.model_validate_json(row["payload_json"]) for row in rows]
 
-    def list_by_actor(self, actor_id: int, *, limit: int, offset: int) -> list[Submission]:
-        """Return the actor's submissions, newest first.
+    def list_by_actor(self, actor_id: int | None, *, limit: int, offset: int) -> list[Submission]:
+        """Return the actor's submissions (every account's when `actor_id` is None), newest first.
 
         Imports grouped into a UC+ZA batch are left out: the batch itself is the operation the
         operator started, and listing its members too would show the same intent three times.
         """
+        actor_filter = "" if actor_id is None else (
+            "json_extract(payload_json, '$.metadata_payload.actor_id') = ? AND "
+        )
+        params = () if actor_id is None else (actor_id,)
         with self._connect() as connection:
             rows = connection.execute(
                 "SELECT payload_json FROM submission "
-                "WHERE json_extract(payload_json, '$.metadata_payload.actor_id') = ? "
-                "AND submission_id NOT IN (SELECT import_id FROM import_batch_member) "
+                f"WHERE {actor_filter}"
+                "submission_id NOT IN (SELECT import_id FROM import_batch_member) "
                 "ORDER BY created_at DESC, submission_id DESC LIMIT ? OFFSET ?",
-                (actor_id, limit, offset),
+                (*params, limit, offset),
             ).fetchall()
         return [Submission.model_validate_json(row["payload_json"]) for row in rows]
 

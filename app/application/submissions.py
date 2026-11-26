@@ -306,8 +306,10 @@ class SubmissionService:
     def get(self, import_id: str) -> Submission:
         return self.repository.get(import_id)
 
-    def list_for_actor(self, actor_id: int, *, limit: int, offset: int) -> tuple[list[Submission], bool]:
-        """Return one page of the actor's imports and whether another page follows."""
+    def list_for_actor(
+        self, actor_id: int | None, *, limit: int, offset: int
+    ) -> tuple[list[Submission], bool]:
+        """Return one page of the actor's imports (all accounts when None) and whether more follow."""
         items = self.repository.list_by_actor(actor_id, limit=limit + 1, offset=offset)
         return items[:limit], len(items) > limit
 

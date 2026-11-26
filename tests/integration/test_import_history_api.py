@@ -115,6 +115,45 @@ def test_history_pages_with_limit_and_offset(client: TestClient, valid_uc_geojso
     assert len(set(listed)) == 3
 
 
+def test_admin_sees_every_account_with_who_sent_it(client: TestClient, valid_uc_geojson: bytes) -> None:
+    mine = _submit(client, valid_uc_geojson, key="history-scope-first").json()
+    _login_as_second_user(client)
+    theirs = _submit(client, valid_uc_geojson, key="history-scope-second").json()
+
+    repository = client.app.state.auth_service.repository
+    repository.create_user(
+        username="admin-historico",
+        nome="Admin do Histórico",
+        password_hash=hash_password("senha-admin-789"),
+        role=UserRole.ADMIN,
+        criado_por=None,
+    )
+    login = client.post("/api/v1/auth/login", json={"username": "admin-historico", "password": "senha-admin-789"})
+    assert login.status_code == 200, login.text
+
+    every = client.get("/api/v1/imports", params={"scope": "all"}).json()["items"]
+    assert [(item["import_id"], item["submitted_by"]) for item in every] == [
+        (theirs["import_id"], "Outra Operadora"),
+        (mine["import_id"], "Operador de Teste"),
+    ]
+    # Sem `scope`, o administrador continua vendo só a própria conta.
+    assert client.get("/api/v1/imports").json()["items"] == []
+
+
+def test_operator_cannot_list_every_account(client: TestClient, valid_uc_geojson: bytes) -> None:
+    created = _submit(client, valid_uc_geojson, key="history-scope-operator").json()
+
+    response = client.get("/api/v1/imports", params={"scope": "all"})
+
+    assert response.status_code == 403
+    assert response.json()["error_code"] == "FORBIDDEN_ROLE"
+    own = client.get("/api/v1/imports").json()["items"]
+    assert [(item["import_id"], item["submitted_by"]) for item in own] == [
+        (created["import_id"], "Operador de Teste")
+    ]
+    assert client.get("/api/v1/imports", params={"scope": "outra"}).status_code == 422
+
+
 def test_history_rejects_out_of_range_page_size(client: TestClient) -> None:
     assert client.get("/api/v1/imports", params={"limit": 0}).status_code == 422
     assert client.get("/api/v1/imports", params={"limit": 101}).status_code == 422
